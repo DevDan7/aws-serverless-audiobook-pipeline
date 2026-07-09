@@ -8,8 +8,9 @@ The entire infrastructure is defined as code (IaC) using **Terraform**, strictly
 
 ## 🏗️ Architecture Design
 
-![Audiobook Generator Architecture]
+![Audiobook Generator Architecture](/img/arquitectura_serveles_audiobook.png)
 
+```mermaid
 graph LR
     %% Definición de Estilos y Colores para Dark Mode
     classDef aws fill:#232F3E,stroke:#FF9900,stroke-width:2px,color:#fff;
@@ -18,34 +19,34 @@ graph LR
 
     %% Elementos de la Arquitectura
     subgraph Ingestion ["1. INGESTION & ORCHESTRATION"]
-        S3In[Amazon S3: PDF Ingest]:::aws
-        LambdaA[Lambda A: Splitter <br> pypdf]:::aws
-        DB[Amazon DynamoDB: State Table]:::aws
+        S3In["Amazon S3: PDF Ingest"]:::aws
+        LambdaA["Lambda A: Splitter <br> pypdf"]:::aws
+        DB["Amazon DynamoDB: State Table"]:::aws
     end
 
     subgraph Messaging ["2. MESSAGING & BUFFERING"]
-        SQS[Amazon SQS: Main Queue]:::aws
-        DLQ[Amazon SQS: DLQ]:::aws
+        SQS["Amazon SQS: Main Queue"]:::aws
+        DLQ["Amazon SQS: DLQ"]:::aws
     end
 
     subgraph Processing ["3. HYBRID PROCESSING"]
-        LambdaB[Lambda B: Processor <br> Hybrid Engine]:::aws
-        SSM[SSM Parameter Store]:::aws
-        Polly[Amazon Polly: Neural]:::aws
-        Eleven[ElevenLabs API]:::external
+        LambdaB["Lambda B: Processor <br> Hybrid Engine"]:::aws
+        SSM["SSM Parameter Store"]:::aws
+        Polly["Amazon Polly: Neural"]:::aws
+        Eleven["ElevenLabs API"]:::external
     end
 
     subgraph Storage ["4. STORAGE & CONSOLIDATION"]
-        S3Out[Amazon S3: MP3 Outputs]:::aws
-        LambdaC[Lambda C: Consolidator]:::aws
-        SNS[Amazon SNS: Notifications]:::aws
+        S3Out["Amazon S3: MP3 Outputs"]:::aws
+        LambdaC["Lambda C: Consolidator"]:::aws
+        SNS["Amazon SNS: Notifications"]:::aws
     end
 
     %% Relaciones y Flujo
     S3In -- "s3:ObjectCreated" --> LambdaA
-    LambdaA <--> "Registers Book State" --> DB
+    LambdaA -- "Registers Book State" --> DB
     LambdaA -- "Sends Page Chunks" --> SQS
-    SQS <--> "Redrive / Fallbacks" --> DLQ
+    SQS -- "Redrive / Fallbacks" --> DLQ
     SQS -- "Triggers" --> LambdaB
     SSM -- "Fetches API Key" --> LambdaB
     
@@ -56,7 +57,7 @@ graph LR
     Eleven -- "Saves page MP3" --> S3Out
     
     S3Out -- "s3:ObjectCreated" --> LambdaC
-    LambdaC <--> "Increments ProcessedPages" --> DB
+    LambdaC -- "Increments ProcessedPages" --> DB
     LambdaC -- "Saves Audiobook.mp3" --> S3Out
     LambdaC -- "Publishes notification" --> SNS
 
