@@ -11,61 +11,74 @@ The entire infrastructure is defined as code (IaC) using **Terraform**, strictly
 ![Audiobook Generator Architecture](/img/arquitectura_serveles_audiobook.png)
 
 ```mermaid
-graph LR
+graph TD
     %% Definición de Estilos y Colores para Dark Mode
     classDef aws fill:#232F3E,stroke:#FF9900,stroke-width:2px,color:#fff;
     classDef external fill:#1F1F1F,stroke:#00A4EF,stroke-width:2px,color:#fff;
-    classDef group fill:#111,stroke-width:1px,stroke-dasharray: 5 5,color:#fff;
+    classDef group fill:#0d0d0d,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5,color:#fff;
 
-    %% Elementos de la Arquitectura
+    %% GRUPO 1: INGESTION
     subgraph Ingestion ["1. INGESTION & ORCHESTRATION"]
-        S3In["Amazon S3: PDF Ingest"]:::aws
-        LambdaA["Lambda A: Splitter <br> pypdf"]:::aws
-        DB["Amazon DynamoDB: State Table"]:::aws
+        S3In[Amazon S3: PDF Ingest <br> 📄 Click to view s3.tf]:::aws
+        LambdaA[Lambda A: Splitter <br> 🐍 Click to view lambda.tf]:::aws
+        DB[Amazon DynamoDB: State Table <br> 💾 Click to view dynamodb.tf]:::aws
     end
 
+    %% GRUPO 2: MESSAGING
     subgraph Messaging ["2. MESSAGING & BUFFERING"]
-        SQS["Amazon SQS: Main Queue"]:::aws
-        DLQ["Amazon SQS: DLQ"]:::aws
+        SQS[Amazon SQS: Main Queue <br> ✉️ Click to view sqs.tf]:::aws
+        DLQ[Amazon SQS: DLQ <br> ⚠️ Click to view sqs.tf]:::aws
     end
 
+    %% GRUPO 3: PROCESSING
     subgraph Processing ["3. HYBRID PROCESSING"]
-        LambdaB["Lambda B: Processor <br> Hybrid Engine"]:::aws
-        SSM["SSM Parameter Store"]:::aws
-        Polly["Amazon Polly: Neural"]:::aws
-        Eleven["ElevenLabs API"]:::external
+        LambdaB[Lambda B: Processor <br> ⚙️ Click to view lambda_processor.py]:::aws
+        SSM[SSM Parameter Store <br> 🔑 Click to view secrets.tf]:::aws
+        Polly[Amazon Polly: Neural]:::aws
+        Eleven[ElevenLabs API]:::external
     end
 
+    %% GRUPO 4: STORAGE
     subgraph Storage ["4. STORAGE & CONSOLIDATION"]
-        S3Out["Amazon S3: MP3 Outputs"]:::aws
-        LambdaC["Lambda C: Consolidator"]:::aws
-        SNS["Amazon SNS: Notifications"]:::aws
+        S3Out[Amazon S3: MP3 Outputs <br> 🎧 Click to view s3.tf]:::aws
+        LambdaC[Lambda C: Consolidator]:::aws
+        SNS[Amazon SNS: Notifications]:::aws
     end
 
-    %% Relaciones y Flujo
-    S3In -- "s3:ObjectCreated" --> LambdaA
-    LambdaA -- "Registers Book State" --> DB
-    LambdaA -- "Sends Page Chunks" --> SQS
-    SQS -- "Redrive / Fallbacks" --> DLQ
-    SQS -- "Triggers" --> LambdaB
-    SSM -- "Fetches API Key" --> LambdaB
+    %% Relaciones y Flujo (De arriba hacia abajo)
+    S3In --> |"s3:ObjectCreated"| LambdaA
+    LambdaA <--> DB
+    LambdaA --> |"Sends page chunks"| SQS
+    SQS <--> DLQ
+    SQS --> |"Trigger"| LambdaB
+    SSM --> |"Fetches API Key"| LambdaB
     
-    LambdaB -- "MODE: POLLY" --> Polly
-    LambdaB -- "MODE: ELEVENLABS" --> Eleven
+    LambdaB --> |"MODE: POLLY"| Polly
+    LambdaB --> |"MODE: ELEVENLABS"| Eleven
     
-    Polly -- "Saves page MP3" --> S3Out
-    Eleven -- "Saves page MP3" --> S3Out
+    Polly --> S3Out
+    Eleven --> S3Out
     
-    S3Out -- "s3:ObjectCreated" --> LambdaC
-    LambdaC -- "Increments ProcessedPages" --> DB
-    LambdaC -- "Saves Audiobook.mp3" --> S3Out
-    LambdaC -- "Publishes notification" --> SNS
+    S3Out --> |"s3:ObjectCreated"| LambdaC
+    LambdaC <--> DB
+    LambdaC --> |"Saves final Audiobook.mp3"| S3Out
+    LambdaC --> |"Publishes completion"| SNS
 
-    %% Aplicar clases
-    style Ingestion stroke:#FF9900,fill:#0d0d0d
-    style Messaging stroke:#EC407A,fill:#0d0d0d
-    style Processing stroke:#FFEB3B,fill:#0d0d0d
-    style Storage stroke:#4CAF50,fill:#0d0d0d
+    %% Estilos de los marcos
+    style Ingestion stroke:#FF9900,fill:#0f0e0e
+    style Messaging stroke:#EC407A,fill:#0f0e0e
+    style Processing stroke:#FFEB3B,fill:#0f0e0e
+    style Storage stroke:#4CAF50,fill:#0f0e0e
+
+    %% Mapeo de Enlaces Interactivos (URLs de tu repositorio real)
+    click S3In "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/s3.tf" "Go to S3 Code"
+    click LambdaA "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/lambda.tf" "Go to Lambda Code"
+    click DB "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/dynamodb.tf" "Go to DynamoDB Code"
+    click SQS "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/sqs.tf" "Go to SQS Code"
+    click DLQ "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/sqs.tf" "Go to DLQ Code"
+    click SSM "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/secrets.tf" "Go to Secrets Code"
+    click LambdaB "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/lambda_processor.py" "Go to Lambda B Python Code"
+    click S3Out "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/s3.tf" "Go to S3 Output Code"
 
  ``` 
 
