@@ -67,6 +67,9 @@ graph LR
     style Processing stroke:#FFEB3B,fill:#0d0d0d
     style Storage stroke:#4CAF50,fill:#0d0d0d
 
+ ``` 
+
+
 ### ⚙️ How the Pipeline Works:
 1. **Ingestion & Orchestration:** A digital PDF is uploaded to the private S3 Input bucket. S3 automatically triggers **Lambda A (Splitter)**.
 2. **Fan-Out Process:** Lambda A downloads the PDF, registers metadata in **DynamoDB** (BookID, TotalPages, ProcessedPages: 0, Status: PROCESSING), extracts text page-by-page using Python's native `pypdf` library, and sends each page as an individual SQS message with numeric zero-padding (`page_001`, `page_002`) to preserve sequence.
