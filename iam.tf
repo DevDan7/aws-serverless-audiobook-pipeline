@@ -139,6 +139,69 @@ resource "aws_iam_policy" "lambda_splitter_policy" {
   })
 }
 
+# Rol para Lambda C
+resource "aws_iam_role" "lambda_consolidator_role" {
+  name = "audiobook-consolidator-lambda-role-dev"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+    }]
+  })
+}
+
+# Política para Lambda C
+resource "aws_iam_policy" "lambda_consolidator_policy" {
+  name        = "audiobook-consolidator-lambda-policy-dev"
+  description = "Permisos para consolidar MP3s y enviar alertas por SNS"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      # S3: Leer páginas del bucket de salida y listar la carpeta del libro
+      {
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:ListBucket"]
+        Resource = [
+          aws_s3_bucket.pdf_outputs.arn,
+          "${aws_s3_bucket.pdf_outputs.arn}/*"
+        ]
+      },
+      # S3: Guardar el audiolibro terminado en el bucket final
+      {
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = "${aws_s3_bucket.pdf_final_audiobooks.arn}/*"
+      },
+      # DynamoDB: Leer y actualizar el contador
+      {
+        Effect   = "Allow"
+        Action   = ["dynamodb:UpdateItem", "dynamodb:GetItem"]
+        Resource = aws_dynamodb_table.table_SSML.arn
+      },
+      # SNS: Mandar la alerta de éxito
+      {
+        Effect   = "Allow"
+        Action   = ["sns:Publish"]
+        Resource = aws_sns_topic.audiobook_notifications.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_consolidator_attach" {
+  role       = aws_iam_role.lambda_consolidator_role.name
+  policy_arn = aws_iam_policy.lambda_consolidator_policy.arn
+}
+
 resource "aws_iam_role_policy_attachment" "lambda_splitter_attach" {
   role       = aws_iam_role.lambda_splitter_role.name
   policy_arn = aws_iam_policy.lambda_splitter_policy.arn

@@ -15,3 +15,13 @@ resource "aws_s3_bucket" "pdf_outputs" {
     Environment = "Dev"
   }
 }
+
+# Bucket para los Audiolibros Consolidados Completos
+resource "aws_s3_bucket" "pdf_final_audiobooks" {
+  bucket = "pdf-final-audiobooks-dev-daniel"
+
+  tags = {
+    Name        = "pdf-final-audiobooks"
+    Environment = "Dev"
+  }
+}

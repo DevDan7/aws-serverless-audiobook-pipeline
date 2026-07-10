@@ -19,50 +19,50 @@ graph TD
 
     %% GRUPO 1: INGESTION
     subgraph Ingestion ["1. INGESTION & ORCHESTRATION"]
-        S3In[Amazon S3: PDF Ingest <br> 📄 Click to view s3.tf]:::aws
-        LambdaA[Lambda A: Splitter <br> 🐍 Click to view lambda.tf]:::aws
-        DB[Amazon DynamoDB: State Table <br> 💾 Click to view dynamodb.tf]:::aws
+        S3In["Amazon S3: PDF Ingest <br> 📄 Click to view s3.tf"]:::aws
+        LambdaA["Lambda A: Splitter <br> 🐍 Click to view lambda.tf"]:::aws
+        DB["Amazon DynamoDB: State Table <br> 💾 Click to view dynamodb.tf"]:::aws
     end
 
     %% GRUPO 2: MESSAGING
     subgraph Messaging ["2. MESSAGING & BUFFERING"]
-        SQS[Amazon SQS: Main Queue <br> ✉️ Click to view sqs.tf]:::aws
-        DLQ[Amazon SQS: DLQ <br> ⚠️ Click to view sqs.tf]:::aws
+        SQS["Amazon SQS: Main Queue <br> ✉️ Click to view sqs.tf"]:::aws
+        DLQ["Amazon SQS: DLQ <br> ⚠️ Click to view sqs.tf"]:::aws
     end
 
     %% GRUPO 3: PROCESSING
     subgraph Processing ["3. HYBRID PROCESSING"]
-        LambdaB[Lambda B: Processor <br> ⚙️ Click to view lambda_processor.py]:::aws
-        SSM[SSM Parameter Store <br> 🔑 Click to view secrets.tf]:::aws
-        Polly[Amazon Polly: Neural]:::aws
-        Eleven[ElevenLabs API]:::external
+        LambdaB["Lambda B: Processor <br> ⚙️ Click to view lambda_processor.py"]:::aws
+        SSM["SSM Parameter Store <br> 🔑 Click to view secrets.tf"]:::aws
+        Polly["Amazon Polly: Neural"]:::aws
+        Eleven["ElevenLabs API"]:::external
     end
 
     %% GRUPO 4: STORAGE
     subgraph Storage ["4. STORAGE & CONSOLIDATION"]
-        S3Out[Amazon S3: MP3 Outputs <br> 🎧 Click to view s3.tf]:::aws
-        LambdaC[Lambda C: Consolidator]:::aws
-        SNS[Amazon SNS: Notifications]:::aws
+        S3Out["Amazon S3: MP3 Outputs <br> 🎧 Click to view s3.tf"]:::aws
+        LambdaC["Lambda C: Consolidator"]:::aws
+        SNS["Amazon SNS: Notifications"]:::aws
     end
 
     %% Relaciones y Flujo (De arriba hacia abajo)
-    S3In --> |"s3:ObjectCreated"| LambdaA
-    LambdaA <--> DB
-    LambdaA --> |"Sends page chunks"| SQS
-    SQS <--> DLQ
-    SQS --> |"Trigger"| LambdaB
-    SSM --> |"Fetches API Key"| LambdaB
+    S3In -- "s3:ObjectCreated" --> LambdaA
+    LambdaA -- "Read/Write" --> DB
+    LambdaA -- "Sends page chunks" --> SQS
+    SQS -- "Redrive" --> DLQ
+    SQS -- "Trigger" --> LambdaB
+    SSM -- "Fetches API Key" --> LambdaB
     
-    LambdaB --> |"MODE: POLLY"| Polly
-    LambdaB --> |"MODE: ELEVENLABS"| Eleven
+    LambdaB -- "MODE: POLLY" --> Polly
+    LambdaB -- "MODE: ELEVENLABS" --> Eleven
     
     Polly --> S3Out
     Eleven --> S3Out
     
-    S3Out --> |"s3:ObjectCreated"| LambdaC
-    LambdaC <--> DB
-    LambdaC --> |"Saves final Audiobook.mp3"| S3Out
-    LambdaC --> |"Publishes completion"| SNS
+    S3Out -- "s3:ObjectCreated" --> LambdaC
+    LambdaC -- "Update Status" --> DB
+    LambdaC -- "Saves final Audiobook.mp3" --> S3Out
+    LambdaC -- "Publishes completion" --> SNS
 
     %% Estilos de los marcos
     style Ingestion stroke:#FF9900,fill:#0f0e0e
@@ -70,7 +70,7 @@ graph TD
     style Processing stroke:#FFEB3B,fill:#0f0e0e
     style Storage stroke:#4CAF50,fill:#0f0e0e
 
-    %% Mapeo de Enlaces Interactivos (URLs de tu repositorio real)
+    %% Mapeo de Enlaces Interactivos
     click S3In "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/s3.tf" "Go to S3 Code"
     click LambdaA "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/lambda.tf" "Go to Lambda Code"
     click DB "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/dynamodb.tf" "Go to DynamoDB Code"
