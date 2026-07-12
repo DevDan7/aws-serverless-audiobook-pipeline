@@ -15,6 +15,7 @@ resource "aws_iam_role" "lambda_processor_role" {
 # 2. La Política de Permisos Mínimos
 resource "aws_iam_policy" "lambda_processor_policy" {
   name        = "audiobook-processor-lambda-policy-dev"
+  path        = "/"
   description = "Permisos estrictos para la Lambda Procesadora de Audiobooks"
 
   policy = jsonencode({
@@ -48,11 +49,12 @@ resource "aws_iam_policy" "lambda_processor_policy" {
         ]
         Resource = "*" # <-- Comodín temporal para aislar el problema
       },
+        
       # Permiso para Amazon Polly (Sintetizar audio)
       {
         Effect = "Allow"
         Action = [
-          "polly:StartSpeechSynthesisTask"
+          "polly:SynthesizeSpeech"
         ]
         Resource = "*" # Polly requiere "*" porque la tarea de síntesis no se limita a un recurso específico
       },
@@ -82,6 +84,30 @@ resource "aws_iam_policy" "lambda_processor_policy" {
       }
     ]
   })
+}
+
+resource "aws_iam_policy" "lambda_bedrock_policy" {
+  name        = "lambda-bedrock-policy"
+  description = "Permite a la Lambda Splitter invocar el modelo Nova Micro en Bedrock"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel"
+        ]
+        # Permitimos la invocacion del modelo Nova Micro en cualquier region compatible (ej. us-east-1)
+        Resource = "arn:aws:bedrock:*::foundation-model/amazon.nova-micro-v1:0"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "attach_bedrock" {
+  role       = aws_iam_role.lambda_splitter_role.name # Asegúrate de que coincida con el nombre de tu rol de Lambda A
+  policy_arn = aws_iam_policy.lambda_bedrock_policy.arn
 }
 
 # 3. La Unión (Attachment) entre el Rol y la Política
@@ -205,4 +231,27 @@ resource "aws_iam_role_policy_attachment" "lambda_consolidator_attach" {
 resource "aws_iam_role_policy_attachment" "lambda_splitter_attach" {
   role       = aws_iam_role.lambda_splitter_role.name
   policy_arn = aws_iam_policy.lambda_splitter_policy.arn
+}
+
+resource "aws_iam_policy" "lambda_polly_policy" {
+  name        = "lambda-polly-policy"
+  description = "Permite a la Lambda de procesamiento usar Amazon Polly"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = [
+          "polly:SynthesizeSpeech"
+        ]
+        Resource = "*" # Polly requiere "*" ya que no tiene ARNs para voces individuales en síntesis rápida
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "attach_polly_processor" {
+  role       = aws_iam_role.lambda_processor_role.name # Asegúrate de que este nombre coincida con tu recurso de rol para Lambda B
+  policy_arn = aws_iam_policy.lambda_polly_policy.arn
 }

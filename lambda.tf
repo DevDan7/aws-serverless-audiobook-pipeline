@@ -56,8 +56,8 @@ resource "aws_lambda_function" "audiobook_splitter" {
   role          = aws_iam_role.lambda_splitter_role.arn
   handler       = "lambda_splitter.lambda_handler"
   runtime       = "python3.12"
-  timeout       = 120 # 2 minutos (suficiente para PDFs grandes)
-  memory_size   = 256 # Le damos un poco más de RAM para procesar el PDF en memoria
+  timeout       = 300 # 5 minutos (suficiente para PDFs grandes)
+  memory_size   = 1024 # Le damos un poco más de RAM para procesar el PDF en memoria
 
   source_code_hash = data.archive_file.lambda_splitter_zip.output_base64sha256
 
