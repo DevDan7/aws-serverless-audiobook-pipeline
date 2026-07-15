@@ -49,7 +49,7 @@ resource "aws_iam_policy" "lambda_processor_policy" {
         ]
         Resource = "*" # <-- Comodín temporal para aislar el problema
       },
-        
+
       # Permiso para Amazon Polly (Sintetizar audio)
       {
         Effect = "Allow"
@@ -73,14 +73,6 @@ resource "aws_iam_policy" "lambda_processor_policy" {
           "dynamodb:UpdateItem"
         ]
         Resource = aws_dynamodb_table.table_SSML.arn # <-- Vinculado a tu DynamoDB automáticamente
-      },
-      # Permiso de Solo Lectura para obtener la API Key de ElevenLabs
-      {
-        Effect = "Allow"
-        Action = [
-          "ssm:GetParameter"
-        ]
-        Resource = aws_ssm_parameter.elevenlabs_key.arn
       }
     ]
   })
@@ -241,8 +233,8 @@ resource "aws_iam_policy" "lambda_polly_policy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = [
+        Effect = "Allow"
+        Action = [
           "polly:SynthesizeSpeech"
         ]
         Resource = "*" # Polly requiere "*" ya que no tiene ARNs para voces individuales en síntesis rápida

@@ -21,10 +21,8 @@ resource "aws_lambda_function" "audiobook_processor" {
   # Inyección de variables de entorno
   environment {
     variables = {
-      DYNAMODB_TABLE      = aws_dynamodb_table.table_SSML.name
-      OUTPUT_BUCKET_NAME  = aws_s3_bucket.pdf_outputs.id
-      ELEVENLABS_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb" # <-- Agrega esta línea con tu ID
-      SYNTHESIS_ENGINE    = "POLLY"
+      DYNAMODB_TABLE     = aws_dynamodb_table.table_SSML.name
+      OUTPUT_BUCKET_NAME = aws_s3_bucket.pdf_outputs.id
     }
   }
 
@@ -56,7 +54,7 @@ resource "aws_lambda_function" "audiobook_splitter" {
   role          = aws_iam_role.lambda_splitter_role.arn
   handler       = "lambda_splitter.lambda_handler"
   runtime       = "python3.12"
-  timeout       = 300 # 5 minutos (suficiente para PDFs grandes)
+  timeout       = 300  # 5 minutos (suficiente para PDFs grandes)
   memory_size   = 1024 # Le damos un poco más de RAM para procesar el PDF en memoria
 
   source_code_hash = data.archive_file.lambda_splitter_zip.output_base64sha256
