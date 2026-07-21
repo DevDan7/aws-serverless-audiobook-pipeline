@@ -1,164 +1,359 @@
-# 🎧 AWS Event-Driven AI Audiobook Generator (Dual-Engine)
+# 🎧 AWS Serverless AI Audiobook Pipeline
 
-An enterprise-grade, serverless, and event-driven pipeline that converts digital PDF books into natural, high-quality audiobooks. By leveraging a **Hybrid Voice Architecture**, this system dynamically toggles between **Amazon Polly Neural/Standard** (for cost-free bulk book synthesis) and **ElevenLabs API** (for ultra-realistic voice cloning).
+A serverless, event-driven application that transforms PDF books into high-quality MP3 audiobooks using native AWS services.
 
-The entire infrastructure is defined as code (IaC) using **Terraform**, strictly adhering to AWS security, reliability, and FinOps best practices.
+This project was built to solve a real personal problem: consuming educational content while driving or during activities where reading is impractical.
 
----
-
-## 🏗️ Architecture Design
-
-![Audiobook Generator Architecture](/img/arquitectura_serveles_audiobook.png)
-
-```mermaid
-graph TD
-    %% Definición de Estilos y Colores para Dark Mode
-    classDef aws fill:#232F3E,stroke:#FF9900,stroke-width:2px,color:#fff;
-    classDef external fill:#1F1F1F,stroke:#00A4EF,stroke-width:2px,color:#fff;
-    classDef group fill:#0d0d0d,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5,color:#fff;
-
-    %% GRUPO 1: INGESTION
-    subgraph Ingestion ["1. INGESTION & ORCHESTRATION"]
-        S3In["Amazon S3: PDF Ingest <br> 📄 Click to view s3.tf"]:::aws
-        LambdaA["Lambda A: Splitter <br> 🐍 Click to view lambda.tf"]:::aws
-        DB["Amazon DynamoDB: State Table <br> 💾 Click to view dynamodb.tf"]:::aws
-    end
-
-    %% GRUPO 2: MESSAGING
-    subgraph Messaging ["2. MESSAGING & BUFFERING"]
-        SQS["Amazon SQS: Main Queue <br> ✉️ Click to view sqs.tf"]:::aws
-        DLQ["Amazon SQS: DLQ <br> ⚠️ Click to view sqs.tf"]:::aws
-    end
-
-    %% GRUPO 3: PROCESSING
-    subgraph Processing ["3. HYBRID PROCESSING"]
-        LambdaB["Lambda B: Processor <br> ⚙️ Click to view lambda_processor.py"]:::aws
-        SSM["SSM Parameter Store <br> 🔑 Click to view secrets.tf"]:::aws
-        Polly["Amazon Polly: Neural"]:::aws
-        Eleven["ElevenLabs API"]:::external
-    end
-
-    %% GRUPO 4: STORAGE
-    subgraph Storage ["4. STORAGE & CONSOLIDATION"]
-        S3Out["Amazon S3: MP3 Outputs <br> 🎧 Click to view s3.tf"]:::aws
-        LambdaC["Lambda C: Consolidator"]:::aws
-        SNS["Amazon SNS: Notifications"]:::aws
-    end
-
-    %% Relaciones y Flujo (De arriba hacia abajo)
-    S3In -- "s3:ObjectCreated" --> LambdaA
-    LambdaA -- "Read/Write" --> DB
-    LambdaA -- "Sends page chunks" --> SQS
-    SQS -- "Redrive" --> DLQ
-    SQS -- "Trigger" --> LambdaB
-    SSM -- "Fetches API Key" --> LambdaB
-    
-    LambdaB -- "MODE: POLLY" --> Polly
-    LambdaB -- "MODE: ELEVENLABS" --> Eleven
-    
-    Polly --> S3Out
-    Eleven --> S3Out
-    
-    S3Out -- "s3:ObjectCreated" --> LambdaC
-    LambdaC -- "Update Status" --> DB
-    LambdaC -- "Saves final Audiobook.mp3" --> S3Out
-    LambdaC -- "Publishes completion" --> SNS
-
-    %% Estilos de los marcos
-    style Ingestion stroke:#FF9900,fill:#0f0e0e
-    style Messaging stroke:#EC407A,fill:#0f0e0e
-    style Processing stroke:#FFEB3B,fill:#0f0e0e
-    style Storage stroke:#4CAF50,fill:#0f0e0e
-
-    %% Mapeo de Enlaces Interactivos
-    click S3In "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/s3.tf" "Go to S3 Code"
-    click LambdaA "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/lambda.tf" "Go to Lambda Code"
-    click DB "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/dynamodb.tf" "Go to DynamoDB Code"
-    click SQS "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/sqs.tf" "Go to SQS Code"
-    click DLQ "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/sqs.tf" "Go to DLQ Code"
-    click SSM "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/secrets.tf" "Go to Secrets Code"
-    click LambdaB "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/lambda_processor.py" "Go to Lambda B Python Code"
-    click S3Out "https://github.com/DevDan7/aws-serverless-audiobook-pipeline/blob/main/s3.tf" "Go to S3 Output Code"
-
- ``` 
-
-
-### ⚙️ How the Pipeline Works:
-1. **Ingestion & Orchestration:** A digital PDF is uploaded to the private S3 Input bucket. S3 automatically triggers **Lambda A (Splitter)**.
-2. **Fan-Out Process:** Lambda A downloads the PDF, registers metadata in **DynamoDB** (BookID, TotalPages, ProcessedPages: 0, Status: PROCESSING), extracts text page-by-page using Python's native `pypdf` library, and sends each page as an individual SQS message with numeric zero-padding (`page_001`, `page_002`) to preserve sequence.
-3. **Queue & Buffer (SQS):** SQS acts as a message broker. It handles concurrency, isolates the long-running AI processes, and buffers failures using a custom **Dead Letter Queue (DLQ)** with a 360-second Visibility Timeout.
-4. **Hybrid Processing (Lambda B):** SQS triggers concurrent instances of **Lambda B (Processor)**. Based on the `SYNTHESIS_ENGINE` environment variable, it executes one of two paths:
-   - **Mode `POLLY` (Default/Bulk):** Asynchronously triggers **Amazon Polly Neural/Standard** (`StartSpeechSynthesisTask`) using the high-quality Brazilian voice 'Camila' to synthesize full books with zero/low cost.
-   - **Mode `ELEVENLABS` (Premium/Cloning):** Securely fetches the API Key from **AWS SSM Parameter Store**, invokes the **ElevenLabs API** using Python's zero-dependency native library `urllib` to clone specific voices (e.g., Antoni or Pablo Marçal), and streams the binary MP3 bytes directly back to S3.
-5. **Storage:** The generated page-by-page MP3 files are saved to the output S3 bucket under the book's specific subfolder.
+Besides solving that problem, it demonstrates modern AWS architecture using Infrastructure as Code (Terraform), Event-Driven Architecture, and Generative AI with Amazon Bedrock.
 
 ---
 
-## 🛠️ Tech Stack & Keywords
+# Project Goals
 
-- **Cloud Platform:** AWS (S3, SQS, DynamoDB, Lambda, Bedrock, Polly, SSM Parameter Store, IAM)
-- **Multi-Cloud Integration:** ElevenLabs API (Voice Cloning / Neural TTS)
-- **Infrastructure as Code (IaC):** Terraform (v1.5.0+, AWS Provider v5.0)
-- **Programming Language:** Python 3.12 (Boto3, PyPDF, Urllib native)
-- **Architectural Patterns:** Event-Driven Architecture (EDA), Fan-Out, Hybrid Cloud.
+This project has two main objectives.
 
----
+## Functional Goal
 
-## 🔒 Security & Best Practices (DevOps Alignment)
+Convert PDF books into high-quality audiobooks automatically.
 
-- **Secure Secrets Management:** The ElevenLabs API Key is **NEVER** hardcoded in Python or pushed to GitHub. It is securely stored as a `SecureString` in **AWS Systems Manager (SSM) Parameter Store**, encrypted with KMS, and accessed via granular `ssm:GetParameter` permissions.
-- **Principle of Least Privilege (PoLP):** No `*FullAccess` policies are used. Every Lambda has a dedicated IAM role restricted to specific resource ARNs (e.g., Lambda B is only allowed to perform `s3:PutObject` on the output S3 path and read the single designated SSM secret).
-- **Decoupled Serverless Scaling:** Using SQS visibility timeouts prevents API Gateway and Lambda timeouts (15m limit), allowing 100+ page books to scale and process concurrently without failures.
-- **Automated Builds:** Terraform's `source_code_hash` automatically detects local Python modifications in the `src/` directory, rebuilding and deploying the `.zip` packages seamlessly.
+## Engineering Goal
 
----
+Demonstrate practical experience with:
 
-## 💰 FinOps: Cost Optimization
+- AWS Serverless
+- Event-Driven Architecture
+- Infrastructure as Code (Terraform)
+- Amazon Bedrock
+- Amazon Polly
+- Cloud Engineering best practices
 
-- **Dual-Engine Toggle:** The environment variable `SYNTHESIS_ENGINE` can be toggled to `"POLLY"` for bulk books (utilizing AWS Polly's 1 Million free Neural characters/month and 5 Million free Standard characters/month) or `"ELEVENLABS"` for short premium cloning.
-- **On-Demand Billing:** All resources (DynamoDB, SQS, Lambdas) are configured to run purely serverless on on-demand tiering, costing $0.00 USD when idle.
-- **S3 Lifecycle Rules:** (Roadmap) Automatic clean-up rules configured via Terraform to purge temporary page chunks after 24 hours.
+The project intentionally prioritizes simplicity, maintainability and native AWS services over unnecessary complexity.
 
 ---
 
-## 🚀 How to Deploy Locally
+# Architecture Overview
 
-### Prerequisites
-1. Installed **Terraform (>= 1.5.0)** and **Python 3.12**.
-2. AWS CLI configured with active credentials (`aws configure`).
+![Architecture](img/arquitectura_serveles_audiobook.png)
 
-### Deployment Steps
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/DevDan7/aws-serverless-audiobook-pipeline.git
-   cd aws-serverless-audiobook-pipeline
-   ```
+## AWS Services
 
-2. **Package Lambda Splitter dependencies locally:**
-   ```bash
-   cd src/lambda_splitter
-   pip install pypdf -t .
-   cd ../..
-   ```
-
-3. **Deploy with Terraform (Pass your sensitive API Key securely):**
-   ```bash
-   terraform init
-   terraform plan
-   terraform apply -var="elevenlabs_api_key=YOUR_ELEVENLABS_API_KEY" --auto-approve
-   ```
-
-4. **Test the pipeline:**
-   Set `SYNTHESIS_ENGINE` to `"POLLY"` in `lambda.tf` and run `terraform apply`. Upload any PDF book in Portuguese to your input S3 bucket. Monitor progress via **DynamoDB** and **CloudWatch**, then listen to your generated audiolibro pages in the output S3 bucket!
+- Amazon S3
+- AWS Lambda
+- Amazon SQS
+- Amazon DynamoDB
+- Amazon Bedrock
+- Amazon Polly
+- Amazon SNS
+- AWS IAM
+- Terraform
 
 ---
 
-## 🗺️ Roadmap & Next Steps (Phase 3)
+# Architecture Flow
 
-- [ ] **AI-driven Page Curation (Lambda A):** Integrate Bedrock as an agentic tool to automatically filter out structural pages (copyright, blank exercise pages, indexes) before processing.
-- [ ] **Consolidation Engine (Lambda C):** Build an S3-triggered Lambda that monitors database state, dynamically concatenates individual page-by-page MP3s in correct order, and publishes a "Ready" notification via **Amazon SNS**.
+```text
+                Upload PDF
+                     │
+                     ▼
+            Amazon S3 (Input)
+                     │
+                     ▼
+           Lambda Splitter
+                     │
+        Extract PDF Text (PyPDF)
+                     │
+                     ▼
+      Amazon Bedrock (Page Curation)
+                     │
+     KEEP / DISCARD each page
+                     │
+                     ▼
+      Register Book in DynamoDB
+                     │
+                     ▼
+          Fan-Out via Amazon SQS
+                     │
+                     ▼
+         Lambda Processor
+                     │
+                     ▼
+          Amazon Polly (TTS)
+                     │
+                     ▼
+        S3 Intermediate MP3 Files
+                     │
+                     ▼
+       Lambda Consolidator
+                     │
+                     ▼
+      Final Audiobook (.mp3)
+                     │
+                     ▼
+         Amazon SNS Notification
+```
 
-## 👨‍💻 Autor
+---
+
+# How the Pipeline Works
+
+## 1. Upload
+
+The user uploads a PDF into the input S3 bucket.
+
+This automatically triggers the Splitter Lambda.
+
+---
+
+## 2. Text Extraction
+
+The Splitter extracts the text from every PDF page using PyPDF.
+
+---
+
+## 3. AI Page Curation
+
+Each page is analyzed by Amazon Bedrock.
+
+Pages that contain only:
+
+- indexes
+- blank pages
+- copyright notices
+- structural content
+
+are discarded.
+
+Only meaningful reading content continues through the pipeline.
+
+---
+
+## 4. Fan-Out Processing
+
+Each valid page becomes an independent SQS message.
+
+This allows AWS Lambda to process pages in parallel.
+
+---
+
+## 5. Speech Synthesis
+
+Lambda Processor sends every page to Amazon Polly.
+
+Polly generates one MP3 file per page.
+
+---
+
+## 6. Consolidation
+
+Every generated MP3 is stored in Amazon S3.
+
+When all pages are available:
+
+- Lambda Consolidator joins every MP3
+- Creates the final audiobook
+- Stores the final file
+- Sends an SNS notification
+
+---
+
+# AWS Architecture Patterns
+
+This project demonstrates several common AWS architectural patterns.
+
+- Event-Driven Architecture
+- Fan-Out Processing
+- Fan-In Aggregation
+- Serverless Computing
+- Infrastructure as Code
+- Asynchronous Processing
+- AI-assisted Content Processing
+
+---
+
+# Tech Stack
+
+## Cloud
+
+- AWS
+
+## Infrastructure
+
+- Terraform
+
+## Programming Language
+
+- Python 3.12
+
+## AWS Services
+
+- Amazon S3
+- AWS Lambda
+- Amazon SQS
+- Amazon DynamoDB
+- Amazon Bedrock
+- Amazon Polly
+- Amazon SNS
+- IAM
+
+---
+
+# Security
+
+The project follows AWS security best practices.
+
+- Principle of Least Privilege (IAM)
+- No hardcoded credentials
+- Serverless architecture
+- Dedicated IAM Roles
+- Resource-specific permissions
+
+---
+
+# Cost Optimization
+
+The architecture uses only pay-per-use AWS services.
+
+Main optimization strategies include:
+
+- Serverless compute (Lambda)
+- DynamoDB On-Demand
+- SQS buffering
+- Amazon Polly pay-per-request
+- Amazon Bedrock only during page classification
+
+No infrastructure runs continuously.
+
+---
+
+# Repository Structure
+
+```text
+.
+├── src/
+│   ├── lambda_splitter/
+│   ├── lambda_processor/
+│   └── lambda_consolidator/
+│
+├── img/
+│
+├── docs/
+│
+├── lambda.tf
+├── iam.tf
+├── s3.tf
+├── sqs.tf
+├── dynamodb.tf
+├── sns.tf
+└── README.md
+```
+
+---
+
+# Deploy
+
+## Requirements
+
+- Terraform >= 1.5
+- Python 3.12
+- AWS CLI configured
+
+---
+
+## Clone
+
+```bash
+git clone https://github.com/DevDan7/aws-serverless-audiobook-pipeline.git
+
+cd aws-serverless-audiobook-pipeline
+```
+
+---
+
+## Install Dependencies
+
+```bash
+cd src/lambda_splitter
+
+pip install pypdf -t .
+
+cd ../..
+```
+
+---
+
+## Deploy
+
+```bash
+terraform init
+
+terraform plan
+
+terraform apply
+```
+
+---
+
+## Test
+
+1. Upload a PDF.
+
+2. Monitor CloudWatch logs.
+
+3. Verify:
+
+- DynamoDB status
+- SQS messages
+- Generated MP3 pages
+- Final audiobook
+- SNS notification
+
+---
+
+# Lessons Learned
+
+Building this project provided hands-on experience with:
+
+- Event-Driven Architecture
+- AWS Serverless Design
+- Terraform
+- Infrastructure as Code
+- Amazon Bedrock
+- Amazon Polly
+- AWS IAM
+- Distributed Processing
+- AI-assisted document workflows
+
+More importantly, it reinforced a core engineering principle:
+
+> Build the simplest architecture that correctly solves the business problem.
+
+---
+
+# Future Improvements
+
+Possible future enhancements include:
+
+- S3 Lifecycle Rules for temporary files.
+- CloudWatch dashboards and alarms.
+- Automated CI/CD pipeline.
+- Automated testing.
+
+These improvements are intentionally outside the scope of version 1.0.
+
+---
+
+# Author
+
 **Daniel Villegas**
-* Cloud Engineer | AWS Certified
-* [LinkedIn] https://www.linkedin.com/in/vdaniel07/
+
+Cloud Engineer
+
+AWS Certified
+
+Building practical serverless solutions with AWS.
+
+LinkedIn:
+https://www.linkedin.com/in/vdaniel07/
+
+GitHub:
+https://github.com/DevDan7 
